@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>OTP登録</title>
+</head>
+<body>
+  <h1>OTP登録</h1>
+
+  <p>Google AuthenticatorでQRコードを読み取ってください。</p>
+  <img src="{{ url_for('otp_setup_qr') }}">
+
+  <h2>確認コード入力</h2>
+  <p>アプリに表示された6桁コードを入力してください。</p>
+
+  <form method="post" action="{{ url_for('otp_verify') }}">
+    <input type="text" name="code" placeholder="6桁コード" required>
+    <button type="submit">登録を完了する</button>
+  </form>
+</body>
+</html>

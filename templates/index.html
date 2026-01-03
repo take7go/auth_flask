@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ログイン中</title>
+</head>
+<body>
+  <h1>ログイン中</h1>
+
+  <p><strong>ユーザー：</strong>{{ user }}</p>
+
+  <p><strong>現在の認証レベル：</strong>{{ session.auth_level }}</p>
+
+  <h2>認証状態</h2>
+  <ul>
+    <li>
+      OTP：
+      {% if otp_enabled %}
+        ✅ 有効
+      {% elif otp_registered %}
+        ⚠️ 登録中（未確認）
+      {% else %}
+        ❌ 未登録
+      {% endif %}
+    </li>
+
+    <li>
+      FIDO：
+      {% if fido_enabled %}
+        ✅ 有効
+      {% else %}
+        ❌ 未登録
+      {% endif %}
+    </li>
+  </ul>
+
+  <h2>操作</h2>
+  <ul>
+    {% if not otp_enabled %}
+      <li><a href="{{ url_for('otp_setup_page') }}">OTPを登録する</a></li>
+    {% endif %}
+
+    {% if not fido_enabled %}
+      <li><a href="{{ url_for('fido_register_page') }}">FIDO認証器を登録する</a></li>
+    {% endif %}
+  </ul>
+
+  <form action="{{ url_for('logout') }}" method="get">
+    <button type="submit">ログアウト</button>
+  </form>
+</body>
+</html>

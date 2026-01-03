@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>FIDO認証</title>
+</head>
+<body>
+  <h1>認証してください</h1>
+  <button onclick="auth()">認証</button>
+
+  <script>
+  async function auth() {
+    const res = await fetch("/fido/auth/begin");
+    const options = await res.json();
+
+    options.challenge = Uint8Array.from(
+      atob(options.challenge), c => c.charCodeAt(0)
+    );
+
+    const cred = await navigator.credentials.get({ publicKey: options });
+
+    await fetch("/fido/auth/complete", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(cred)
+    });
+
+    location.href = "/";
+  }
+  </script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>追加認証選択</title>
+</head>
+<body>
+  <h1>追加認証を選択してください</h1>
+
+  <ul>
+    <li>
+      <a href="/otp/auth"
+         {% if not otp_enabled %}style="pointer-events:none;color:gray"{% endif %}>
+        OTP認証
+        {% if not otp_enabled %}(未登録){% endif %}
+      </a>
+    </li>
+
+    <li>
+      <a href="/fido/auth"
+         {% if not fido_enabled %}style="pointer-events:none;color:gray"{% endif %}>
+        FIDO認証
+        {% if not fido_enabled %}(未登録){% endif %}
+      </a>
+    </li>
+
+    <li>
+      <a href="/auth/skip">追加認証なしでログイン</a>
+    </li>
+  </ul>
+</body>
+</html>

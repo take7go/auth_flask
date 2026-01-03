@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ログイン</title>
+</head>
+<body>
+  <h1>ログイン</h1>
+  <form method="post">
+    <div>
+      <label>ユーザー名</label>
+      <input type="text" name="username">
+    </div>
+    <div>
+      <label>パスワード</label>
+      <input type="password" name="password">
+    </div>
+    <button type="submit">ログイン</button>
+  </form>
+  <p><a href="{{ url_for('register') }}">新規登録</a></p>
+</body>
+</html>
