@@ -14,9 +14,9 @@ http://localhost:5000/login
 
 ### 構成
 
-フロント：html+JS
-バック：Python
-DB：sqlite
+- フロント：html+JS
+- バック：Python
+- DB：sqlite
 
 ### 画面設計
 
