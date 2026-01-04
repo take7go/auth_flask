@@ -5,27 +5,56 @@
   <title>FIDO認証</title>
 </head>
 <body>
-  <h1>認証してください</h1>
+  <h1>FIDO認証</h1>
   <button onclick="auth()">認証</button>
 
   <script>
+  function base64urlToUint8Array(base64url) {
+    const padding = '='.repeat((4 - base64url.length % 4) % 4);
+    const base64 = (base64url + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const raw = atob(base64);
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+
   async function auth() {
-    const res = await fetch("/fido/auth/begin");
-    const options = await res.json();
+    try {
+      // ① challenge 取得
+      const res = await fetch("/fido/auth/begin");
+      if (!res.ok) throw new Error("begin failed");
 
-    options.challenge = Uint8Array.from(
-      atob(options.challenge), c => c.charCodeAt(0)
-    );
+      const options = await res.json();
 
-    const cred = await navigator.credentials.get({ publicKey: options });
+      // ② challenge / credentialId を変換
+      options.challenge = base64urlToUint8Array(options.challenge);
 
-    await fetch("/fido/auth/complete", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(cred)
-    });
+      if (options.allowCredentials) {
+        options.allowCredentials = options.allowCredentials.map(c => ({
+          ...c,
+          id: base64urlToUint8Array(c.id)
+        }));
+      }
 
-    location.href = "/";
+      // ③ 認証器 UI 起動
+      const cred = await navigator.credentials.get({
+        publicKey: options
+      });
+
+      // ④ サーバーへ送信
+      const result = await fetch("/fido/auth/complete", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(cred)
+      });
+
+      if (!result.ok) throw new Error("complete failed");
+
+      location.href = "/";
+    } catch (e) {
+      alert("FIDO認証に失敗しました: " + e.message);
+      console.error(e);
+    }
   }
   </script>
 </body>

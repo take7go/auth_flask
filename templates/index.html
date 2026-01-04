@@ -37,11 +37,11 @@
   <h2>操作</h2>
   <ul>
     {% if not otp_enabled %}
-      <li><a href="{{ url_for('otp_setup_page') }}">OTPを登録する</a></li>
+      <li><a href="{{ url_for('otp_setup') }}">OTPを登録する</a></li>
     {% endif %}
 
     {% if not fido_enabled %}
-      <li><a href="{{ url_for('fido_register_page') }}">FIDO認証器を登録する</a></li>
+      <li><a href="{{ url_for('fido_setup') }}">FIDO認証器を登録する</a></li>
     {% endif %}
   </ul>
 

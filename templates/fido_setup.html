@@ -7,7 +7,7 @@
 <body>
   <h1>FIDO認証器登録</h1>
 
-  <button onclick="register()">認証器を登録する</button>
+  <button onclick="fidoSetup()">認証器を登録する</button>
 
     <script>
     function base64urlToUint8Array(base64url) {
@@ -30,9 +30,9 @@
         .replace(/=+$/, "");
     }
 
-    async function register() {
+    async function fidoSetup() {
       try {
-        const res = await fetch("/fido/register/begin");
+        const res = await fetch("/fido/setup/begin");
         if (!res.ok) throw new Error("begin failed");
 
         const options = await res.json();
@@ -59,7 +59,7 @@
           }
         };
 
-        const result = await fetch("/fido/register/complete", {
+        const result = await fetch("/fido/setup/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data)

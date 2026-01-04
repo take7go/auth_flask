@@ -4,11 +4,11 @@ import pyotp
 import qrcode
 from io import BytesIO
 import sqlite3
-from fido2.server import Fido2Server
-from fido2.webauthn import PublicKeyCredentialRpEntity
 from flask import jsonify
-import base64
-from fido2.utils import websafe_encode
+from fido2.server import Fido2Server
+from fido2.webauthn import PublicKeyCredentialRpEntity, AttestedCredentialData, PublicKeyCredentialDescriptor
+from fido2.utils import websafe_encode, websafe_decode
+import pickle
 
 rp = PublicKeyCredentialRpEntity(
     name="FlaskAuthDemo",
@@ -35,8 +35,7 @@ def init_db():
                 otp_enabled INTEGER DEFAULT 0,
 
                 fido_credential_id BLOB,
-                fido_public_key BLOB,
-                fido_sign_count INTEGER,
+                fido_credential_data BLOB,
                 fido_enabled INTEGER DEFAULT 0
             )
         """)
@@ -142,7 +141,11 @@ def auth_skip():
     session["auth_level"] = "password"
     return redirect(url_for("index"))
 
-# OTP登録画面
+##
+## OTP
+##
+
+# OTP認証
 @app.route("/otp/auth", methods=["GET", "POST"])
 def otp_auth():
     # パスワード認証未完了
@@ -178,25 +181,35 @@ def otp_auth():
             error="認証コードが正しくありません"
         )
 
-    return render_template("otp.html")
+    return render_template("otp_auth.html")
 
 # OTPのセットアップページ表示
-@app.route("/otp/setup_page")
-def otp_setup_page():
-    if "tmp_user" not in session:
-        return redirect(url_for("login"))
-    return render_template("otp_setup.html")
-
-# OTPのQRコード生成
-@app.route("/otp/setup/qr")
-def otp_setup_qr():
-    if "tmp_user" not in session:
+@app.route("/otp/setup")
+def otp_setup():
+    if "user" not in session:
         return redirect(url_for("login"))
 
     with get_db() as conn:
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?",
-            (session["tmp_user"],)
+            (session["user"],)
+        ).fetchone()
+
+    if user["otp_enabled"]:
+        return redirect(url_for("index"))
+
+    return render_template("otp_setup.html")
+
+# OTPのQRコード生成
+@app.route("/otp/setup/qr")
+def otp_setup_qr():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ?",
+            (session["user"],)
         ).fetchone()
 
         # 秘密鍵がなければ生成（有効化はまだしない）
@@ -223,9 +236,9 @@ def otp_setup_qr():
     return send_file(buf, mimetype="image/png")
 
 # OTPのセットアップ時検証用
-@app.route("/otp/verify", methods=["POST"])
-def otp_verify():
-    if "tmp_user" not in session:
+@app.route("/otp/setup/verify", methods=["POST"])
+def otp_setup_verify():
+    if "user" not in session:
         return redirect(url_for("login"))
 
     code = request.form["code"]
@@ -233,8 +246,11 @@ def otp_verify():
     with get_db() as conn:
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?",
-            (session["tmp_user"],)
+            (session["user"],)
         ).fetchone()
+
+        if not user or not user["otp_secret"]:
+            return redirect(url_for("otp_setup"))
 
         totp = pyotp.TOTP(user["otp_secret"])
         if totp.verify(code, valid_window=1):
@@ -242,10 +258,13 @@ def otp_verify():
                 "UPDATE users SET otp_enabled = 1 WHERE username = ?",
                 (user["username"],)
             )
-            session["user"] = session.pop("tmp_user")
             return redirect(url_for("index"))
 
     return "OTP確認失敗"
+
+##
+## FIDO
+##
 
 # FIDO認証
 def encode_if_bytes(value):
@@ -253,14 +272,14 @@ def encode_if_bytes(value):
         return websafe_encode(value)
     return value
 
-@app.route("/fido/register")
-def fido_register_page():
+@app.route("/fido/setup")
+def fido_setup():
     if "user" not in session:
         return redirect(url_for("login"))
-    return render_template("fido_register.html")
+    return render_template("fido_setup.html")
 
-@app.route("/fido/register/begin")
-def fido_register_begin():
+@app.route("/fido/setup/begin")
+def fido_setup_begin():
     if "user" not in session:
         return redirect(url_for("login"))
 
@@ -301,27 +320,31 @@ def fido_register_begin():
 
     return jsonify(public_key_options)
 
-@app.route("/fido/register/complete", methods=["POST"])
-def fido_register_complete():
+@app.route("/fido/setup/complete", methods=["POST"])
+def fido_setup_complete():
+    if "fido_state" not in session or "user" not in session:
+        return "", 400
+
     data = request.get_json()
 
     auth_data = fido_server.register_complete(
-        session["fido_state"],
+        session.pop("fido_state"),
         data
     )
+
+    credential_data = auth_data.credential_data  # ← AttestedCredentialData
+    print(type(auth_data.credential_data))
 
     with get_db() as conn:
         conn.execute("""
             UPDATE users SET
-              fido_credential_id = ?,
-              fido_public_key = ?,
-              fido_sign_count = ?,
-              fido_enabled = 1
-            WHERE username = ?
+                fido_credential_id = ?,
+                fido_credential_data = ?,
+                fido_enabled = 1
+                WHERE username = ?
         """, (
-            auth_data.credential_data.credential_id,
-            auth_data.credential_data.public_key,
-            auth_data.sign_count,
+            credential_data.credential_id,
+            pickle.dumps(credential_data),
             session["user"]
         ))
 
@@ -329,10 +352,10 @@ def fido_register_complete():
 
 @app.route("/fido/auth")
 def fido_auth():
+    # パスワード認証未完了
     if "tmp_user" not in session:
         return redirect(url_for("login"))
-    
-    # ユーザー取得
+
     with get_db() as conn:
         user = conn.execute(
             "SELECT * FROM users WHERE username = ?",
@@ -341,12 +364,92 @@ def fido_auth():
 
     if user is None:
         return redirect(url_for("login"))
-    
-    # OTP未登録ユーザーは使えない
+
+    # FIDO未登録ユーザーは使えない
     if not user["fido_enabled"]:
         return redirect(url_for("post_login"))
-    
+
     return render_template("fido_auth.html")
+
+@app.route("/fido/auth/begin")
+def fido_auth_begin():
+    # パスワード認証が完了していない場合はログインへ
+    if "tmp_user" not in session:
+        return redirect(url_for("login"))
+
+    # DBからユーザー取得
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ?",
+            (session["tmp_user"],)
+        ).fetchone()
+
+    if not user or not user["fido_enabled"] or not user["fido_credential_id"]:
+        return redirect(url_for("post_login"))
+
+    # PublicKeyCredentialDescriptor を作成（認証開始に必要）
+    descriptor = PublicKeyCredentialDescriptor(
+        type="public-key",
+        id=user["fido_credential_id"]  # bytes
+    )
+
+    # FIDO認証開始
+    options, state = fido_server.authenticate_begin(
+        credentials=[descriptor],
+        user_verification="preferred",
+    )
+
+    # 認証状態をセッションに保存
+    session["fido_state"] = state
+
+    pk = options.public_key
+
+    # クライアントに渡す JSON レスポンス
+    response = {
+        "challenge": websafe_encode(pk.challenge),
+        "timeout": pk.timeout,
+        "rpId": pk.rp_id,
+        "allowCredentials": [
+            {
+                "type": cred.type,
+                "id": websafe_encode(cred.id),
+            }
+            for cred in pk.allow_credentials
+        ],
+        "userVerification": pk.user_verification,
+    }
+
+    return jsonify(response)
+
+@app.route("/fido/auth/complete", methods=["POST"])
+def fido_auth_complete():
+    if "tmp_user" not in session or "fido_state" not in session:
+        return "", 403
+
+    data = request.get_json()
+
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ?",
+            (session["tmp_user"],)
+        ).fetchone()
+
+    if not user or not user["fido_enabled"]:
+        return "", 403
+
+    credential_data = pickle.loads(user["fido_credential_data"])
+
+    auth_data = fido_server.authenticate_complete(
+        session.pop("fido_state"),
+        [credential_data],
+        data
+    )
+
+    # 認証成功
+    session["user"] = session.pop("tmp_user")
+    session["auth_level"] = "fido"
+
+    return "", 204
 
 # ログアウト
 @app.route("/logout")
